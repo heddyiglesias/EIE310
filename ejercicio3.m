@@ -1,51 +1,49 @@
 clear all;
 close all;
-load ups.txt;% lee muestras desde un archivo de texto 
-x = ups'; % convierte vector de columna a vector de fila 
-Nm = 5400;% número de muestras 
-Fs = 6400;% frecuencia de muestreo [Hz] 
-Dt = 1 / Fs;% intervalo de muestreo [seg] 
- % Gráfico [a]: 5 ciclos (0.1 seg.) de la secuencia  
- % para visualizar la distorsión en la forma de onda 
-n = [0 : 1 : Nm-1];% índice de las muestras 
-t = n * Dt;% vector de tiempo 
-subplot 221; plot(t, x)  % gráfico 
-axis([0 0.1 -10 10])% escalas 
-xlabel('t [seg]'); ylabel('Amp'); grid 
-title('[a]  5 ciclos de la onda original') 
- % Elimina posible componente continua y aplica ventana Hanning 
- % para reducir el contenido espurio en el espectro 
-x = x - mean(x);% elimina posible nivel medio  
-x = x .* hanning(Nm)'; % multiplica por ventana Hanning 
-x = x - mean(x);% elimina posible nivel medio post-ventana 
- % Aumenta el número de muestras a la siguiente potencia de 2 
- % para aprovechar la eficiencia de la FFT, al mismo tiempo 
- % que aumenta la definición espectral 
-NC = 8192 - 5400;% número de ceros a agregar 
-z = zeros(1, NC);% forma vector de ceros 
-x = [x z];% concatena ceros a los datos 
-Nf = 8192;% número de muestras para la FFT (2^13) 
- % Gráfico [b]: secuencia de entrada a la FFT. Contiene 8192 
- % muestras @ 5400 m/s, es decir, un segmento de 1.28 seg. 
-n = [0 : 1 : Nf-1];% índice de las muestras 
-t = n * Dt;% vector de tiempo 
-subplot 222; plot(t, x); % gráfico 
-axis([0 1.4 -10 10]) % escalas 
-xlabel('t [seg]'); ylabel('Amp'); grid 
-title('[b]  Secuencia ingresada a la FFT') 
- % Calcula la magnitud del espectro 
-X = fft(x);                  % FFT 
-M = (2/Nm) * abs(X(1:Nf/2));  % magnitud de frecuencias positivas 
-M = M / 0.5;                 % compensa atenuación de la vent. Hanning 
- % Gráfico [c]: magnitud del espectro
- k = [0 : 1 : Nf/2-1];  % vector de frecuencias discretas positivas 
- f = k / (Nf * Dt);     % vector de frecuencias [Hz] 
- subplot 223; semilogy(f, M(k+1));   % gráfico 
- axis([0 2500 0.001 8]);             % escalas 
- xlabel('f [Hz]'); ylabel('Mag'); grid 
- title('[c]  Magnitud del espectro') 
- % Gráfico [d]: espectro ampliado (zoom) en frecuencias bajas 
- subplot 224; semilogy(f, M(k+1));   % gráfico 
- axis([0 260 0.001 8]);              % escalas 
- xlabel('f [Hz]'); ylabel('Mag'); grid 
-title('[d]  Ampliación de gráfico [c]')
+% Diseño de filtro multibanda FIR (5 bandas) con el método óptimo
+% Banda 1 : 0 - 200 Hz; rechazo; mag = 0; ripple = -40 dB
+% Banda 2 : 220 - 380 Hz; paso; mag = 1; ripple = 3 dB
+% Banda 3 : 400 - 590 Hz; rechazo; mag = 0; ripple = -50 dB
+% Banda 4 : 610 - 700 Hz; paso; mag = 0.5; ripple = 1 dB
+% Banda 5 : 720 - 1000 Hz; rechazo; mag = 0; ripple = -60 dB
+Fs = 2000; % frecuencia de muestreo
+% Frec. límites de bandas; no se especifica la inicial ni la final
+f = [200 220 380 400 590 610 700 720];
+a = [0 1 0 0.5 0]; % amplitudes deseadas en las bandas
+% Ripple en las bandas
+r1 = 40; r2 = 3; r3 = 50; r4 = 1; r5 = 60;
+% Desviaciones en las bandas
+d1 = 10^(-r1/20);
+d2 = (10^(r2/20)-1)/(10^(r2/20)+1);
+d3 = 10^(-r3/20);
+d4 = (10^(r4/20)-1)/(10^(r4/20)+1);
+d5 = 10^(-r5/20);
+dev = [d1 d2 d3 d4 d5]; % vector de desviaciones
+[O, fo, ao, w] = remezord(f, a, dev, Fs); % estima orden del filtro
+O % despliega orden = (N-1)
+b = remez(O, fo, ao, w); % diseña el filtro
+% Respuesta de frecuencia obtenida
+[H, f] = freqz(b, 1, 1024, Fs);
+%plot(f, 20*log10(abs(H))); xlabel('Hz'); ylabel('dB'); grid
+
+% Frec. límites de bandas; no se especifica la inicial ni la final
+fb = [200 220 380 400 590 610 700 720];
+b = [1 0 1 0 1]; % amplitudes deseadas en las bandas
+% Ripple en las bandas
+rb1 = 3; rb2 = 40; rb3 = 3; rb4 = 40; rb5 =3 ;
+% Desviaciones en las bandas
+db1 = (10^(rb1/20)-1)/(10^(rb1/20)+1);
+db2 = 10^(-rb2/20);
+db3 = (10^(rb3/20)-1)/(10^(rb3/20)+1);
+db4 = 10^(-rb4/20);
+db5 = (10^(rb5/20)-1)/(10^(rb5/20)+1);
+devb = [db1 db2 db3 db4 db5]; % vector de desviaciones
+[Ob, fob, aob, wb] = remezord(fb, b, devb, Fs); % estima orden del filtro
+Ob % despliega orden = (N-1)
+c = remez(Ob, fob, aob, wb); % diseña el filtro
+% Respuesta de frecuencia obtenida
+[J, fb] = freqz(c, 1, 1024, Fs);
+%plot(fb, 20*log10(abs(J))); xlabel('Hz'); ylabel('dB'); grid
+plot(f, 20*log10(abs(H)),'b',fb,20*log10(abs(J)),'r');
+title('filtro a (azul) filtro b (rojo)')
+xlabel('Hz');ylabel('dB');grid
